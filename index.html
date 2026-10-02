@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Labirin Algojo - GitHub Game</title>
+    <style>
+        body {
+            background-color: #0d0d0d;
+            color: #fff;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+        h1 {
+            color: #ff3333;
+            text-shadow: 2px 2px 4px #000;
+            margin-bottom: 10px;
+        }
+        #gameContainer {
+            position: relative;
+            border: 4px solid #ff3333;
+            box-shadow: 0 0 20px rgba(255, 0, 0, 0.5);
+        }
+        canvas {
+            display: block;
+            background-color: #1a1a1a;
+        }
+        #ui {
+            margin-top: 15px;
+            font-size: 1.2em;
+            text-align: center;
+        }
+        .status {
+            color: #00ff00;
+            font-weight: bold;
+        }
+        #overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.85);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            display: none;
+            z-index: 10;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 1.2em;
+            background: #ff3333;
+            color: white;
+            border: none;
+            cursor: pointer;
+            margin-top: 20px;
+            font-family: inherit;
+            font-weight: bold;
+        }
+        button:hover { background: #cc0000; }
+    </style>
+</head>
+<body>
+
+    <h1>🪓 LABIRIN ALGOJO 🪓</h1>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="600" height="600"></canvas>
+        <div id="overlay">
+            <h2 id="gameMessage">GAME OVER</h2>
+            <p id="subMessage">Algojo menangkapmu!</p>
+            <button onclick="resetGame()">Main Lagi</button>
+        </div>
+    </div>
+    <div id="ui">
+        <p>Gunakan <span class="status">Arrow Keys</span> atau <span class="status">WASD</span> untuk bergerak.</p>
+        <p>Kejar Pintu Hijau 🟩 sebelum Algojo 🟥 menangkapmu!</p>
+    </div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const overlay = document.getElementById('overlay');
+    const msg = document.getElementById('gameMessage');
+    const subMsg = document.getElementById('subMessage');
+
+    // Konfigurasi Grid
+    const tileSize = 30;
+    const cols = canvas.width / tileSize;
+    const rows = canvas.height / tileSize;
+
+    // 0 = Jalan, 1 = Tembok, 2 = Start, 3 = Finish
+    // Labirin acak tapi terstruktur
+    const map = [
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,2,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,1],
+        [1,0,1,1,0,1,0,1,1,1,1,1,0,1,0,1,1,1,0,1],
+        [1,0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1,0,1],
+        [1,0,1,0,1,1,1,1,1,1,0,1,1,1,1,1,0,1,0,1],
+        [1,0,0,0,1,0,0,0,0,1,0,0,0,0,0,1,0,0,0,1],
+        [1,1,1,0,1,0,1,1,0,1,1,1,1,1,0,1,1,1,0,1],
+        [1,0,0,0,0,0,1,0,0,0,0,0,0,1,0,0,0,0,0,1],
+        [1,0,1,1,1,1,1,0,1,1,1,1,0,1,1,1,1,1,0,1],
+        [1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,1],
+        [1,1,1,1,1,1,1,0,1,0,1,1,1,1,1,1,1,1,0,1],
+        [1,0,0,0,0,0,1,0,1,0,1,0,0,0,0,0,0,1,0,1],
+        [1,0,1,1,1,0,1,0,1,0,1,0,1,1,1,1,0,1,0,1],
+        [1,0,1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,1,0,1],
+        [1,0,1,0,1,1,1,1,1,1,1,1,1,0,1,1,1,1,0,1],
+        [1,0,0,0,1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,1],
+        [1,1,1,0,1,0,1,1,1,1,1,1,1,0,1,0,1,1,1,1],
+        [1,0,0,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0,3,1],
+        [1,0,1,1,1,1,1,0,1,1,1,0,1,1,1,1,1,1,0,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+    ];
+
+    let player = { x: 1, y: 1, color: '#00ff00' };
+    let algojo = { x: 18, y: 18, color: '#ff0000', speed: 15 }; // speed = frame delay
+    let frameCount = 0;
+    let gameActive = true;
+
+    // Input Handling
+    const keys = {};
+    window.addEventListener('keydown', (e) => keys[e.key] = true);
+    window.addEventListener('keyup', (e) => keys[e.key] = false);
+
+    function resetGame() {
+        player.x = 1; player.y = 1;
+        algojo.x = 18; algojo.y = 18;
+        gameActive = true;
+        overlay.style.display = 'none';
+        loop();
+    }
+
+    function isWall(x, y) {
+        if (x < 0 || x >= cols || y < 0 || y >= rows) return true;
+        return map[y][x] === 1;
+    }
+
+    function movePlayer() {
+        if (!gameActive) return;
+        
+        let newX = player.x;
+        let newY = player.y;
+
+        if (keys['ArrowUp'] || keys['w']) newY--;
+        if (keys['ArrowDown'] || keys['s']) newY++;
+        if (keys['ArrowLeft'] || keys['a']) newX--;
+        if (keys['ArrowRight'] || keys['d']) newX++;
+
+        if (!isWall(newX, newY)) {
+            player.x = newX;
+            player.y = newY;
+        }
+
+        // Cek Menang
+        if (map[player.y][player.x] === 3) {
+            endGame("KAMU SELAMAT!", "Berhasil kabur dari Algojo.", "#00ff00");
+        }
+    }
+
+    // Algoritma Algojo (Greedy Pathfinding Sederhana)
+    function moveAlgojo() {
+        if (!gameActive) return;
+
+        // Algoritma: Cari langkah yang mengurangi jarak ke player tanpa menabrak tembok
+        const directions = [
+            {x: 0, y: -1}, // Up
+            {x: 0, y: 1},  // Down
+            {x: -1, y: 0}, // Left
+            {x: 1, y: 0}   // Right
+        ];
+
+        let bestMove = null;
+        let minDist = Infinity;
+
+        // Acak sedikit agar tidak terlalu kaku (opsional)
+        directions.sort(() => Math.random() - 0.5);
+
+        for (let dir of directions) {
+            let nextX = algojo.x + dir.x;
+            let nextY = algojo.y + dir.y;
+
+            if (!isWall(nextX, nextY)) {
+                // Hitung jarak Euclidean ke player
+                let dist = Math.hypot(player.x - nextX, player.y - nextY);
+                if (dist < minDist) {
+                    minDist = dist;
+                    bestMove = {x: nextX, y: nextY};
+                }
+            }
+        }
+
+        if (bestMove) {
+            algojo.x = bestMove.x;
+            algojo.y = bestMove.y;
+        }
+
+        // Cek Kalah
+        if (algojo.x === player.x && algojo.y === player.y) {
+            endGame("TERTANGKAP!", "Algojo telah memenggalmu... 💀", "#ff0000");
+        }
+    }
+
+    function endGame(title, subtitle, color) {
+        gameActive = false;
+        msg.innerText = title;
+        msg.style.color = color;
+        subMsg.innerText = subtitle;
+        overlay.style.display = 'flex';
+    }
+
+    function draw() {
+        ctx.fillStyle = '#1a1a1a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Gambar Map
+        for (let y = 0; y < rows; y++) {
+            for (let x = 0; x < cols; x++) {
+                if (map[y][x] === 1) {
+                    ctx.fillStyle = '#333'; // Tembok
+                    ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+                    // Efek 3D sederhana pada tembok
+                    ctx.strokeStyle = '#555';
+                    ctx.strokeRect(x * tileSize, y * tileSize, tileSize, tileSize);
+                } else if (map[y][x] === 3) {
+                    ctx.fillStyle = '#00ff00'; // Pintu Keluar
+                    ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+                    ctx.fillStyle = '#000';
+                    ctx.font = "20px Arial";
+                    ctx.fillText("🚪", x * tileSize + 5, y * tileSize + 22);
+                }
+            }
+        }
+
+        // Gambar Player
+        ctx.fillStyle = player.color;
+        ctx.beginPath();
+        ctx.arc(player.x * tileSize + tileSize/2, player.y * tileSize + tileSize/2, tileSize/2 - 2, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Mata Player
+        ctx.fillStyle = '#000';
+        ctx.fillRect(player.x * tileSize + 10, player.y * tileSize + 10, 4, 4);
+        ctx.fillRect(player.x * tileSize + 18, player.y * tileSize + 10, 4, 4);
+
+        // Gambar Algojo
+        ctx.fillStyle = algojo.color;
+        ctx.fillRect(algojo.x * tileSize + 2, algojo.y * tileSize + 2, tileSize - 4, tileSize - 4);
+        
+        // Wajah Algojo
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(algojo.x * tileSize + 8, algojo.y * tileSize + 8, 5, 5);
+        ctx.fillRect(algojo.x * tileSize + 18, algojo.y * tileSize + 8, 5, 5);
+        ctx.fillStyle = '#000';
+        ctx.fillRect(algojo.x * tileSize + 10, algojo.y * tileSize + 20, 10, 3); // Mulut seram
+    }
+
+    function loop() {
+        if (!gameActive) return;
+
+        frameCount++;
+        
+        // Player bergerak tiap frame
+        movePlayer();
+        
+        // Algojo bergerak lebih lambat (setiap 10 frame) agar bisa dihindari
+        if (frameCount % 10 === 0) {
+            moveAlgojo();
+        }
+
+        draw();
+        requestAnimationFrame(loop);
+    }
+
+    // Start
+    resetGame();
+</script>
+</body>
+</html>
