@@ -2,8 +2,8 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Labirin Algojo - GitHub Game</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Labirin Algojo - Swipe Edition</title>
     <style>
         body {
             background-color: #0d0d0d;
@@ -15,47 +15,49 @@
             justify-content: center;
             height: 100vh;
             margin: 0;
-            overflow: hidden;
+            overflow: hidden; /* Mencegah scroll saat swipe */
+            touch-action: none; /* Penting untuk mencegah zoom/scroll browser */
         }
         h1 {
             color: #ff3333;
             text-shadow: 2px 2px 4px #000;
-            margin-bottom: 10px;
+            margin: 5px 0;
+            font-size: 1.5rem;
         }
         #gameContainer {
             position: relative;
             border: 4px solid #ff3333;
             box-shadow: 0 0 20px rgba(255, 0, 0, 0.5);
+            margin-top: 10px;
         }
         canvas {
             display: block;
             background-color: #1a1a1a;
+            max-width: 100%;
+            max-height: 80vh;
         }
         #ui {
-            margin-top: 15px;
-            font-size: 1.2em;
+            margin-top: 10px;
+            font-size: 0.9em;
             text-align: center;
+            padding: 0 10px;
         }
-        .status {
-            color: #00ff00;
-            font-weight: bold;
-        }
+        .status { color: #00ff00; font-weight: bold; }
+        
+        /* Overlay Game Over / Menang */
         #overlay {
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.85);
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9);
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            display: none;
+            display: none; /* Hidden by default */
             z-index: 10;
         }
         button {
-            padding: 10px 20px;
+            padding: 12px 24px;
             font-size: 1.2em;
             background: #ff3333;
             color: white;
@@ -64,24 +66,35 @@
             margin-top: 20px;
             font-family: inherit;
             font-weight: bold;
+            border-radius: 5px;
         }
         button:hover { background: #cc0000; }
+        
+        /* Petunjuk Swipe Visual */
+        .swipe-hint {
+            font-size: 0.8em;
+            color: #888;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
 
     <h1>🪓 LABIRIN ALGOJO 🪓</h1>
+    
     <div id="gameContainer">
         <canvas id="gameCanvas" width="600" height="600"></canvas>
         <div id="overlay">
-            <h2 id="gameMessage">GAME OVER</h2>
+            <h2 id="gameMessage" style="color: red; font-size: 2em;">GAME OVER</h2>
             <p id="subMessage">Algojo menangkapmu!</p>
             <button onclick="resetGame()">Main Lagi</button>
         </div>
     </div>
+
     <div id="ui">
-        <p>Gunakan <span class="status">Arrow Keys</span> atau <span class="status">WASD</span> untuk bergerak.</p>
-        <p>Kejar Pintu Hijau 🟩 sebelum Algojo 🟥 menangkapmu!</p>
+        <p>PC: <span class="status">WASD / Panah</span></p>
+        <p>HP: <span class="status">Geser Layar (Swipe)</span></p>
+        <p class="swipe-hint">Cari pintu 🚩 hindari algojo 👹</p>
     </div>
 
 <script>
@@ -96,8 +109,7 @@
     const cols = canvas.width / tileSize;
     const rows = canvas.height / tileSize;
 
-    // 0 = Jalan, 1 = Tembok, 2 = Start, 3 = Finish
-    // Labirin acak tapi terstruktur
+    // Peta Labirin (1=Tembok, 0=Jalan, 2=Start, 3=Finish)
     const map = [
         [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
         [1,2,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,1],
@@ -121,22 +133,70 @@
         [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
     ];
 
-    let player = { x: 1, y: 1, color: '#00ff00' };
-    let algojo = { x: 18, y: 18, color: '#ff0000', speed: 15 }; // speed = frame delay
+    let player = { x: 1, y: 1 };
+    let algojo = { x: 18, y: 18 };
     let frameCount = 0;
     let gameActive = true;
 
-    // Input Handling
+    // --- KONTROL KEYBOARD ---
     const keys = {};
     window.addEventListener('keydown', (e) => keys[e.key] = true);
     window.addEventListener('keyup', (e) => keys[e.key] = false);
 
-    function resetGame() {
-        player.x = 1; player.y = 1;
-        algojo.x = 18; algojo.y = 18;
-        gameActive = true;
-        overlay.style.display = 'none';
-        loop();
+    // --- KONTROL SWIPE (TOUCH) ---
+    let touchStartX = 0;
+    let touchStartY = 0;
+    const minSwipeDistance = 30; // Jarak minimal geser agar terdeteksi
+
+    document.addEventListener('touchstart', function(e) {
+        touchStartX = e.changedTouches[0].screenX;
+        touchStartY = e.changedTouches[0].screenY;
+    }, false);
+
+    document.addEventListener('touchend', function(e) {
+        if (!gameActive) return;
+
+        let touchEndX = e.changedTouches[0].screenX;
+        let touchEndY = e.changedTouches[0].screenY;
+        
+        handleSwipe(touchStartX, touchStartY, touchEndX, touchEndY);
+    }, false);
+
+    function handleSwipe(startX, startY, endX, endY) {
+        let diffX = endX - startX;
+        let diffY = endY - startY;
+
+        // Cek apakah gerakan lebih dominan horizontal atau vertikal
+        if (Math.abs(diffX) > Math.abs(diffY)) {
+            // Horizontal
+            if (Math.abs(diffX) > minSwipeDistance) {
+                if (diffX > 0) movePlayerDir('right');
+                else movePlayerDir('left');
+            }
+        } else {
+            // Vertikal
+            if (Math.abs(diffY) > minSwipeDistance) {
+                if (diffY > 0) movePlayerDir('down');
+                else movePlayerDir('up');
+            }
+        }
+    }
+
+    // Fungsi helper untuk memindahkan player berdasarkan arah string
+    function movePlayerDir(direction) {
+        let newX = player.x;
+        let newY = player.y;
+
+        if (direction === 'up') newY--;
+        if (direction === 'down') newY++;
+        if (direction === 'left') newX--;
+        if (direction === 'right') newX++;
+
+        if (!isWall(newX, newY)) {
+            player.x = newX;
+            player.y = newY;
+            checkWin();
+        }
     }
 
     function isWall(x, y) {
@@ -144,52 +204,29 @@
         return map[y][x] === 1;
     }
 
-    function movePlayer() {
-        if (!gameActive) return;
-        
-        let newX = player.x;
-        let newY = player.y;
-
-        if (keys['ArrowUp'] || keys['w']) newY--;
-        if (keys['ArrowDown'] || keys['s']) newY++;
-        if (keys['ArrowLeft'] || keys['a']) newX--;
-        if (keys['ArrowRight'] || keys['d']) newX++;
-
-        if (!isWall(newX, newY)) {
-            player.x = newX;
-            player.y = newY;
-        }
-
-        // Cek Menang
+    function checkWin() {
         if (map[player.y][player.x] === 3) {
             endGame("KAMU SELAMAT!", "Berhasil kabur dari Algojo.", "#00ff00");
         }
     }
 
-    // Algoritma Algojo (Greedy Pathfinding Sederhana)
+    // AI Algojo
     function moveAlgojo() {
         if (!gameActive) return;
 
-        // Algoritma: Cari langkah yang mengurangi jarak ke player tanpa menabrak tembok
         const directions = [
-            {x: 0, y: -1}, // Up
-            {x: 0, y: 1},  // Down
-            {x: -1, y: 0}, // Left
-            {x: 1, y: 0}   // Right
+            {x: 0, y: -1}, {x: 0, y: 1}, {x: -1, y: 0}, {x: 1, y: 0}
         ];
 
         let bestMove = null;
         let minDist = Infinity;
 
-        // Acak sedikit agar tidak terlalu kaku (opsional)
-        directions.sort(() => Math.random() - 0.5);
-
+        // Algoritma Greedy: Cari langkah terdekat ke player
         for (let dir of directions) {
             let nextX = algojo.x + dir.x;
             let nextY = algojo.y + dir.y;
 
             if (!isWall(nextX, nextY)) {
-                // Hitung jarak Euclidean ke player
                 let dist = Math.hypot(player.x - nextX, player.y - nextY);
                 if (dist < minDist) {
                     minDist = dist;
@@ -205,7 +242,7 @@
 
         // Cek Kalah
         if (algojo.x === player.x && algojo.y === player.y) {
-            endGame("TERTANGKAP!", "Algojo telah memenggalmu... 💀", "#ff0000");
+            endGame("TERTANGKAP!", "Kepalamu dipenggal Algojo... 💀", "#ff0000");
         }
     }
 
@@ -217,7 +254,16 @@
         overlay.style.display = 'flex';
     }
 
+    function resetGame() {
+        player.x = 1; player.y = 1;
+        algojo.x = 18; algojo.y = 18;
+        gameActive = true;
+        overlay.style.display = 'none';
+        loop();
+    }
+
     function draw() {
+        // Bersihkan layar
         ctx.fillStyle = '#1a1a1a';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -225,42 +271,33 @@
         for (let y = 0; y < rows; y++) {
             for (let x = 0; x < cols; x++) {
                 if (map[y][x] === 1) {
-                    ctx.fillStyle = '#333'; // Tembok
+                    ctx.fillStyle = '#333'; 
                     ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
-                    // Efek 3D sederhana pada tembok
-                    ctx.strokeStyle = '#555';
+                    ctx.strokeStyle = '#444';
                     ctx.strokeRect(x * tileSize, y * tileSize, tileSize, tileSize);
                 } else if (map[y][x] === 3) {
-                    ctx.fillStyle = '#00ff00'; // Pintu Keluar
+                    ctx.fillStyle = '#00ff00'; 
                     ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
-                    ctx.fillStyle = '#000';
                     ctx.font = "20px Arial";
-                    ctx.fillText("🚪", x * tileSize + 5, y * tileSize + 22);
+                    ctx.fillText("🚩", x * tileSize + 5, y * tileSize + 22);
                 }
             }
         }
 
-        // Gambar Player
-        ctx.fillStyle = player.color;
+        // Gambar Player (Biru Muda)
+        ctx.fillStyle = '#00ffff';
         ctx.beginPath();
-        ctx.arc(player.x * tileSize + tileSize/2, player.y * tileSize + tileSize/2, tileSize/2 - 2, 0, Math.PI * 2);
+        ctx.arc(player.x * tileSize + tileSize/2, player.y * tileSize + tileSize/2, tileSize/2 - 4, 0, Math.PI * 2);
         ctx.fill();
-        
-        // Mata Player
-        ctx.fillStyle = '#000';
-        ctx.fillRect(player.x * tileSize + 10, player.y * tileSize + 10, 4, 4);
-        ctx.fillRect(player.x * tileSize + 18, player.y * tileSize + 10, 4, 4);
 
-        // Gambar Algojo
-        ctx.fillStyle = algojo.color;
-        ctx.fillRect(algojo.x * tileSize + 2, algojo.y * tileSize + 2, tileSize - 4, tileSize - 4);
+        // Gambar Algojo (Merah)
+        ctx.fillStyle = '#ff0000';
+        ctx.fillRect(algojo.x * tileSize + 4, algojo.y * tileSize + 4, tileSize - 8, tileSize - 8);
         
-        // Wajah Algojo
+        // Mata Algojo
         ctx.fillStyle = '#fff';
         ctx.fillRect(algojo.x * tileSize + 8, algojo.y * tileSize + 8, 5, 5);
         ctx.fillRect(algojo.x * tileSize + 18, algojo.y * tileSize + 8, 5, 5);
-        ctx.fillStyle = '#000';
-        ctx.fillRect(algojo.x * tileSize + 10, algojo.y * tileSize + 20, 10, 3); // Mulut seram
     }
 
     function loop() {
@@ -268,11 +305,14 @@
 
         frameCount++;
         
-        // Player bergerak tiap frame
-        movePlayer();
-        
-        // Algojo bergerak lebih lambat (setiap 10 frame) agar bisa dihindari
-        if (frameCount % 10 === 0) {
+        // Handle Keyboard Input (Continuous movement)
+        if (keys['ArrowUp'] || keys['w']) movePlayerDir('up');
+        else if (keys['ArrowDown'] || keys['s']) movePlayerDir('down');
+        else if (keys['ArrowLeft'] || keys['a']) movePlayerDir('left');
+        else if (keys['ArrowRight'] || keys['d']) movePlayerDir('right');
+
+        // Algojo bergerak setiap 12 frame (sedikit lebih lambat dari player)
+        if (frameCount % 12 === 0) {
             moveAlgojo();
         }
 
@@ -280,7 +320,7 @@
         requestAnimationFrame(loop);
     }
 
-    // Start
+    // Mulai Game
     resetGame();
 </script>
 </body>
